@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مختبر الانشطار النووي المتسلسل المتكامل</title>
+    <style>
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+            background-color: #05070f; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* لوحة التحكم الجانبية */
+        .dashboard {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);
+            border: 1px solid rgba(56, 189, 248, 0.2); color: #f8fafc;
+            padding: 25px; border-radius: 16px; width: 320px; z-index: 10;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+        }
+        .dashboard h2 { margin: 0 0 10px 0; font-size: 1.3rem; color: #38bdf8; }
+        .dashboard p { margin: 0 0 20px 0; font-size: 0.9rem; color: #94a3b8; line-height: 1.5; }
+        
+        .stats {
+            background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 8px;
+            margin-bottom: 15px; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .stat-line { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .stat-val { font-weight: bold; color: #38bdf8; }
+
+        .btn {
+            width: 100%; padding: 12px; font-size: 0.95rem; font-weight: 600;
+            border-radius: 8px; cursor: pointer; transition: all 0.2s ease; margin-bottom: 10px; border: none;
+        }
+        .btn-fire { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); }
+        .btn-fire:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(220, 38, 38, 0.4); }
+        .btn-reset { background: rgba(255, 255, 255, 0.1); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.15); }
+        .btn-reset:hover { background: rgba(255, 255, 255, 0.2); }
+
+        #canvasContainer { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+        canvas { width: 100%; height: 100%; display: block; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <h2>التفاعل المتسلسل والشظايا</h2>
+        <p>شاهد انشطار النواة إلى شظيتين رئيسيتين (الباريوم والكريبتون) بالتزامن مع انطلاق النيوترونات الحرة لتفجير بقية الذرات.</p>
+        
+        <div class="stats">
+            <div class="stat-line"><span>الذرات السليمة:</span><span id="atoms-intact" class="stat-val">0</span></div>
+            <div class="stat-line"><span>الذرات المنشطرة:</span><span id="atoms-burst" class="stat-val" style="color:#ef4444">0</span></div>
+            <div class="stat-line"><span>النيوترونات الحرة:</span><span id="neutrons-count" class="stat-val" style="color:#eab308">0</span></div>
+        </div>
+
+        <button class="btn btn-fire" onclick="startChainReaction()">🚀 إطلاق النيوترون الأول</button>
+        <button class="btn btn-reset" onclick="initSimulation()">🔄 إعادة ملء المختبر</button>
+    </div>
+
+    <div id="canvasContainer">
+        <canvas id="chainCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('chainCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let atoms = [];
+        let neutrons = [];
+        let fragments = []; // مصفوفة لتتبع شظايا الانشطار الطائرة
+        let flashIntensity = 0;
+
+        // دالة رسم ثلاثية الأبعاد مع دعم الشفافية (Opacity) للشظايا أثناء تلاشيها
+        function draw3DSphere(x, y, radius, color, alpha = 1) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            let gradient = ctx.createRadialGradient(x - radius/3, y - radius/3, radius/10, x, y, radius);
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.2, color);
+            gradient.addColorStop(1, '#000000');
+            ctx.fillStyle = gradient;
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.closePath();
+            ctx.restore();
+        }
+
+        function initSimulation() {
+            atoms = [];
+            neutrons = [];
+            fragments = [];
+            flashIntensity = 0;
+
+            const atomCount = 20; 
+            for (let i = 0; i < atomCount; i++) {
+                atoms.push({
+                    x: Math.random() * (canvas.width * 0.65) + (canvas.width * 0.05),
+                    y: Math.random() * (canvas.height * 0.8) + (canvas.height * 0.1),
+                    isIntact: true,
+                    radius: 20
+                });
+            }
+            updateUI();
+        }
+
+        function startChainReaction() {
+            if (neutrons.length > 0 || fragments.length > 0) return; 
+            neutrons.push({
+                x: 10,
+                y: canvas.height / 2,
+                vx: 7,
+                vy: (Math.random() - 0.5) * 3
+            });
+        }
+
+        function updateUI() {
+            const intact = atoms.filter(a => a.isIntact).length;
+            const burst = atoms.length - intact;
+            document.getElementById('atoms-intact').innerText = intact;
+            document.getElementById('atoms-burst').innerText = burst;
+            document.getElementById('neutrons-count').innerText = neutrons.length;
+        }
+
+        function animate() {
+            ctx.fillStyle = "#05070f";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 1. رسم ذرات اليورانيوم السليمة
+            atoms.forEach(atom => {
+                if (atom.isIntact) {
+                    draw3DSphere(atom.x, atom.y, atom.radius, "#ef4444");
+                    draw3DSphere(atom.x + 6, atom.y - 5, atom.radius * 0.9, "#22c55e");
+                    draw3DSphere(atom.x - 5, atom.y + 5, atom.radius * 0.9, "#ef4444");
+                }
+            });
+
+            // 2. تحديث ورسم شظايا الانشطار المتطايرة (بقايا النواة المنقسمة)
+            for (let i = fragments.length - 1; i >= 0; i--) {
+                let f = fragments[i];
+                f.x += f.vx;
+                f.y += f.vy;
+                f.alpha -= 0.015; // تلاشي تدريجي للشظية أثناء ابتعادها
+
+                // رسم الشظية باللون والشفافية الخاصة بها
+                draw3DSphere(f.x, f.y, f.radius, f.color, f.alpha);
+
+                // إزالة الشظية بعد اختفائها تماماً
+                if (f.alpha <= 0) {
+                    fragments.splice(i, 1);
+                }
+            }
+
+            // 3. تحديث ورسم النيوترونات الحرة
+            for (let i = neutrons.length - 1; i >= 0; i--) {
+                let n = neutrons[i];
+                n.x += n.vx;
+                n.y += n.vy;
+
+                draw3DSphere(n.x, n.y, 5, "#3b82f6");
+
+                if (n.x < 0 || n.x > canvas.width || n.y < 0 || n.y > canvas.height) {
+                    neutrons.splice(i, 1);
+                    updateUI();
+                    continue;
+                }
+
+                // فحص الاصطدام
+                for (let j = 0; j < atoms.length; j++) {
+                    let a = atoms[j];
+                    if (a.isIntact) {
+                        let dx = n.x - a.x;
+                        let dy = n.y - a.y;
+                        let distance = Math.sqrt(dx * dx + dy * dy);
+
+                        if (distance < a.radius + 5) {
+                            a.isIntact = false; 
+                            neutrons.splice(i, 1); 
+                            flashIntensity = 0.3; 
+
+                            // حساب زاوية انقسام الشظيتين لتطيرا باتجاهين متعاكسين
+                            let splitAngle = Math.random() * Math.PI * 2;
+                            
+                            // إضافة الشظية الأولى (باريوم - برتقالي كبير)
+                            fragments.push({
+                                x: a.x, y: a.y,
+                                vx: Math.cos(splitAngle) * 3,
+                                vy: Math.sin(splitAngle) * 3,
+                                radius: 15, color: "#f59e0b", alpha: 1
+                            });
+
+                            // إضافة الشظية الثانية (كريبتون - أصفر أصغر) في الاتجاه المعاكس تماماً
+                            fragments.push({
+                                x: a.x, y: a.y,
+                                vx: -Math.cos(splitAngle) * 3.5,
+                                vy: -Math.sin(splitAngle) * 3.5,
+                                radius: 11, color: "#eab308", alpha: 1
+                            });
+
+                            // توليد 3 نيوترونات حرة تنطلق في اتجاهات مختلفة
+                            for (let k = 0; k < 3; k++) {
+                                let angle = Math.random() * Math.PI * 2;
+                                let speed = 4 + Math.random() * 3;
+                                neutrons.push({
+                                    x: a.x, y: a.y,
+                                    vx: Math.cos(angle) * speed,
+                                    vy: Math.sin(angle) * speed
+                                });
+                            }
+                            updateUI();
+                            break; 
+                        }
+                    }
+                }
+            }
+
+            if (flashIntensity > 0) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${flashIntensity})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                flashIntensity -= 0.04;
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        initSimulation();
+        animate();
+    </script>
+</body>
+</html>
